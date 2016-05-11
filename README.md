@@ -4,16 +4,19 @@ Host your own git server over HTTP.
 
 Comes in CLI and Library flavors.
 
+I used [this doc](https://www.kernel.org/pub/software/scm/git/docs/technical/http-protocol.html) and this handy [blog post](http://www.michaelfcollins3.me/blog/2012/05/18/implementing-a-git-http-server.html)
 
-## How To Run the CLI
+
+## How to CLI
 
 Simply run `gittp` at your command line after installing the binary into your `$PATH`.
 
 Available args:
 `-path`: Specify a file path where pushed repositories are stored
+
 `-port`: Specify the port that gittp should listen on
 
-## How to use the Library
+## How to Library
 
 There is a high level API and a low level API.
 
@@ -27,15 +30,14 @@ import (
   "github.com/adamveld12/gittp"
 )
 
-func main(){
-	gitListener := gittp.NewGitHTTPListener()
-	
-	if err := http.ListenAndServe(":80", gitListener); err != nil {
-	  log.Fatal(err)
-	}
+func main() {
+	config := gittp.ServerConfig{
+    Path: "./repositories",
+    PreReceive: gittp.MasterOnlyPreReceive
+  }
+	handle, err := gittp.NewGitServer(config)
+
+  log.Fatal(http.ListenAndServe(":80", handle))
 }
 ```
-
-In the low level API you get access to the `io.ReadCloser` and `io.Writer` objects that handle the actual git repo data. You are also given access to the raw `http.Request` and `http.ResponseWriter` so you can do cooler things like authentication or custom messages to the client.
-
 
