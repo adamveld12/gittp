@@ -125,14 +125,6 @@ func fileExists(path string) bool {
 	return os.IsExist(err)
 }
 
-func handleMissingRepo(serviceStr serviceType, repoName string) error {
-	if serviceStr.isReceivePack() && initRepository(repoName) != nil {
-		return errCouldNotCreateRepo
-	}
-
-	return nil
-}
-
 // TODO needs tests
 func writePacket(payload string) []byte {
 	length := uint32(len(payload) + 4)

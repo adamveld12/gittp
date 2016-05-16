@@ -24,9 +24,10 @@ type ServerConfig struct {
 	PostReceive PostReceiveHook
 	// PreReceive is a pre receive hook that is ran before the repo is updated. Useful for enforcing branch naming (master only pushing).
 	PreReceive PreReceiveHook
+	// OnCreate is a hook called when a push causes a new repository to be created
+	OnCreate PostReceiveHook
 }
 
-// gitHTTPServer is an implementation of a git http backend
 type gitHTTPServer struct {
 	ServerConfig
 }

@@ -32,12 +32,13 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	header.Set("Content-Type", fmt.Sprintf("application/x-%s-%s", ctx.ServiceType, handlerContentType))
 
+	repoExists := fileExists(ctx.FullRepoPath)
 	if ctx.ShouldRunHooks {
 		receivePack := newReceivePackResult(ctx.Input)
 		hookCtx := newHookContext(res,
 			ctx.RepoName,
 			receivePack,
-			fileExists(ctx.FullRepoPath))
+			repoExists)
 
 		if g.PreReceive != nil && !g.PreReceive(hookCtx) {
 			hookCtx.close()
@@ -50,9 +51,14 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				g.PostReceive(hookCtx, archive)
 			}()
 		}
+
+		if !repoExists && g.OnCreate != nil {
+			archive, _ := gitArchive(ctx.FullRepoPath, receivePack.NewRef)
+			defer g.OnCreate(hookCtx, archive)
+		}
 	}
 
-	if err := handleMissingRepo(ctx.ServiceType, ctx.FullRepoPath); err != nil {
+	if !repoExists && ctx.ServiceType.isReceivePack() && initRepository(ctx.FullRepoPath) != nil {
 		res.WriteHeader(http.StatusNotFound)
 		return
 	}
