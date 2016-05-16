@@ -13,28 +13,44 @@ import (
 	"strings"
 )
 
-type StreamCode string
+type streamCode string
 
 const (
-	PackDataStreamCode = StreamCode("\u0001")
-	ProgressStreamCode = StreamCode("\u0002")
-	FatalStreamCode    = StreamCode("\u0003")
-	DefaultStreamCode  = ProgressStreamCode
+	packDataStreamCode = streamCode("\u0001")
+	progressStreamCode = streamCode("\u0002")
+	fatalStreamCode    = streamCode("\u0003")
+	defaultStreamCode  = progressStreamCode
 )
 
 var (
 	serviceRegexp         = regexp.MustCompile("(?:/info/refs\\?service=|/)(git-(?:receive|upload)-pack)$")
-	noMatchingServiceErr  = errors.New("No matching service types found")
-	couldNotCreateRepoErr = errors.New("Could not create repository")
+	errNoMatchingService  = errors.New("No matching service types found")
+	errCouldNotCreateRepo = errors.New("Could not create repository")
+	errCouldNotGetArchive = errors.New("Could not get an archive of the pushed refs")
 )
 
 func detectServiceType(url *url.URL) (string, error) {
 	match := serviceRegexp.FindStringSubmatch(url.RequestURI())
 	if len(match) < 2 {
-		return "", noMatchingServiceErr
+		return "", errNoMatchingService
 	}
 
 	return match[1], nil
+}
+
+func gitArchive(fullRepoPath, hash string) (io.Reader, error) {
+	cmd := exec.Command("git", "archive", hash)
+	cmd.Dir = fullRepoPath
+	cmd.Stderr = os.Stdin
+
+	tarArchive, err := cmd.Output()
+
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil, errCouldNotGetArchive
+	}
+
+	return bytes.NewBuffer(tarArchive), nil
 }
 
 func runCmd(pack serviceType, repoPath string, input io.Reader, output io.Writer, advertise bool) error {
@@ -66,6 +82,7 @@ func parseRepoName(requestPath string) (string, error) {
 	return fmt.Sprintf("%s.git", paths[0]), nil
 }
 
+// ReceivePackResult represents the payload of git-send-pack
 type ReceivePackResult struct {
 	OldRef       string
 	NewRef       string
@@ -110,7 +127,7 @@ func fileExists(path string) bool {
 
 func handleMissingRepo(serviceStr serviceType, repoName string) error {
 	if serviceStr.isReceivePack() && initRepository(repoName) != nil {
-		return couldNotCreateRepoErr
+		return errCouldNotCreateRepo
 	}
 
 	return nil
@@ -133,15 +150,14 @@ func readPacket(packetData []byte) ([]byte, error) {
 	if packetLength, err = strconv.ParseInt(string(packetLengthBytes), 16, 32); err != nil {
 		return nil, err
 	}
-
 	return buf.Next(int(packetLength)), nil
 }
 
 func encode(message string) string {
-	return encodeWithPrefix(DefaultStreamCode, message)
+	return encodeWithPrefix(defaultStreamCode, message)
 }
 
-func encodeWithPrefix(streamCode StreamCode, message string) string {
+func encodeWithPrefix(streamCode streamCode, message string) string {
 	packet := fmt.Sprintf("%s%s", streamCode, message)
 	return fmt.Sprintf("%04X%s", len(packet)+4, packet)
 }

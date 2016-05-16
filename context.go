@@ -12,8 +12,7 @@ import (
 )
 
 var (
-	ServiceNotExistErr     = errors.New("The client specified a service that does not exist")
-	couldNotReadReqBodyErr = errors.New("couldn't read request body")
+	errCouldNotReadReqBody = errors.New("couldn't read request body")
 )
 
 type handlerContext struct {
@@ -52,7 +51,7 @@ func newHandlerContext(sv *gitHTTPServer, req *http.Request) (handlerContext, er
 	reqDataBytes, err := ioutil.ReadAll(req.Body)
 
 	if err != nil {
-		return handlerContext{}, couldNotReadReqBodyErr
+		return handlerContext{}, errCouldNotReadReqBody
 	}
 
 	advertise := req.Method == "GET"
@@ -99,10 +98,13 @@ type HookContext struct {
 	RepoExists bool
 }
 
-func newHookContext(writer io.Writer, repo, branch, commit string, repoExists bool) HookContext {
+func newHookContext(writer io.Writer, repo string, rp ReceivePackResult, repoExists bool) HookContext {
 	return HookContext{
 		writer,
-		repo, branch, commit, repoExists,
+		repo,
+		rp.Branch,
+		rp.NewRef,
+		repoExists,
 	}
 }
 
@@ -121,7 +123,7 @@ func (h HookContext) Write(text string) error {
 	return err
 }
 
-// Write writes a string to the SideChannel and terminates it with a LF
+// Writeln writes a string to the SideChannel and terminates it with a LF
 func (h HookContext) Writeln(text string) error {
 	return h.Write(text + "\n")
 }

@@ -3,15 +3,12 @@ package gittp
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 )
 
 func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if g.Debug {
 		fmt.Println("")
-		debugPrint(res, req)
 	}
 
 	header := res.Header()
@@ -39,20 +36,19 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		receivePack := newReceivePackResult(ctx.Input)
 		hookCtx := newHookContext(res,
 			ctx.RepoName,
-			receivePack.Branch,
-			receivePack.NewRef,
+			receivePack,
 			fileExists(ctx.FullRepoPath))
-
-		defer hookCtx.close()
 
 		if g.PreReceive != nil && !g.PreReceive(hookCtx) {
 			return
 		}
 
 		if g.PostReceive != nil {
-			defer g.PostReceive(hookCtx)
+			defer func() {
+				archive, _ := gitArchive(ctx.FullRepoPath, receivePack.NewRef)
+				g.PostReceive(hookCtx, archive)
+			}()
 		}
-
 	}
 
 	if err := handleMissingRepo(ctx.ServiceType, ctx.FullRepoPath); err != nil {
@@ -60,25 +56,16 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	output := ctx.Output
-	if g.Debug {
-		output = io.MultiWriter(os.Stdout, output)
-	}
-
 	if ctx.IsGetRefs {
-		output.Write(writePacket(fmt.Sprintf("# service=%s\n", ctx.ServiceType)))
+		ctx.Output.Write(writePacket(fmt.Sprintf("# service=%s\n", ctx.ServiceType)))
 	}
 
 	if err := runCmd(ctx.ServiceType,
 		ctx.FullRepoPath,
 		bytes.NewBuffer(ctx.Input),
-		output,
+		ctx.Output,
 		ctx.Advertisement); err != nil {
 		res.WriteHeader(http.StatusNotModified)
 		return
 	}
-}
-
-func debugPrint(res http.ResponseWriter, req *http.Request) {
-	fmt.Println(req.URL.String())
 }

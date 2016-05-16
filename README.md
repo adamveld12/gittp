@@ -12,15 +12,19 @@ I used [this doc](https://www.kernel.org/pub/software/scm/git/docs/technical/htt
 Simply run `gittp` at your command line after installing the binary into your `$PATH`.
 
 Available args:
-`-path`: Specify a file path where pushed repositories are stored
+
+`-path`: Specify a file path where pushed repositories are stored. This folder must exist, and gittp will throw an error if it can't be found
 
 `-port`: Specify the port that gittp should listen on
 
+`-masterOnly`: Only permits pushing to the master branch
+
+`-debug`: turns on debug logging (currently WIP)
+
 ## How to Library
 
-There is a high level API and a low level API.
+This lib follows http.Handler conventions. I purposely do not include any authentication, since there are many http basic authentication modules out there to use.
 
-In the high level API the main object that you'll use is the `GitHTTPListener`. This type implements `http.Handler` so you can easily integrate it into an existing server.
 
 ```go
 package main
@@ -33,11 +37,14 @@ import (
 func main() {
 	config := gittp.ServerConfig{
     Path: "./repositories",
-    PreReceive: gittp.MasterOnlyPreReceive
+    PreReceive: gittp.MasterOnly,
+    PostReceive: func(h gittp.HookContext){
+      h.Writef("Woohoo! Push to %s succeeded!\n", h.Repository)
+    }
   }
+
 	handle, err := gittp.NewGitServer(config)
 
   log.Fatal(http.ListenAndServe(":80", handle))
 }
 ```
-

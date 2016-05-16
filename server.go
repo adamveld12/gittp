@@ -1,6 +1,7 @@
 package gittp
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 type PreReceiveHook func(HookContext) bool
 
 // PostReceiveHook is a func called after git-receive-pack is ran. This is a good place to fire notifications.
-type PostReceiveHook func(HookContext)
+type PostReceiveHook func(HookContext, io.Reader)
 
 // ServerConfig is a configuration object for NewGitServer
 type ServerConfig struct {

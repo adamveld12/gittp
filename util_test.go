@@ -15,7 +15,7 @@ func Test_detectServiceType(t *testing.T) {
 	testCases := map[string]string{
 		"/info/refs?service=git-receive-pack": "git-receive-pack",
 		"/info/refs?service=git-upload-pack":  "git-upload-pack",
-		"/info/refs":                          noMatchingServiceErr.Error(),
+		"/info/refs":                          errNoMatchingService.Error(),
 		"adam/testrepo.git/info/refs?service=git-receive-pack":       "git-receive-pack",
 		"adam/test/repo/info/refs/info/refs?service=git-upload-pack": "git-upload-pack",
 		"/git-receive-pack":                                          "git-receive-pack",
@@ -25,7 +25,7 @@ func Test_detectServiceType(t *testing.T) {
 		"git-upload-pack/git-receive-pack":                           "git-receive-pack",
 		"git-receive-pack/git-upload-pack":                           "git-upload-pack",
 		"adam/test/git-upload-pack/git-receive-pack":                 "git-receive-pack",
-		"adam/test/git":                                              noMatchingServiceErr.Error(),
+		"adam/test/git":                                              errNoMatchingService.Error(),
 	}
 
 	for rawURL, expected := range testCases {
@@ -33,20 +33,20 @@ func Test_detectServiceType(t *testing.T) {
 
 		if err != nil && err.Error() != expected {
 			t.Logf("testing %s -> %s\n", rawURL, expected)
-			t.Error(fail(expected, err.Error()))
+			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, err.Error())
 		} else if err == nil && actual != expected {
 			t.Logf("testing %s -> %s\n", rawURL, expected)
-			t.Error(fail(expected, actual))
+			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
 	}
 }
 
 func Test_buildPacket(t *testing.T) {
-	result := string(writePacket("# service=git-receive-pack\n"))
+	actual := string(writePacket("# service=git-receive-pack\n"))
 	expected := fmt.Sprintf("001f# service=git-receive-pack\n0000")
 
-	if result != expected {
-		t.Error(fail(expected, result))
+	if actual != expected {
+			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 	}
 }
 
@@ -64,7 +64,7 @@ func Test_parseRepoName(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		} else if actual != expected {
-			t.Error(fail(expected, actual))
+			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
 	}
 
@@ -83,15 +83,11 @@ func Test_encode(t *testing.T) {
 	for expected, testcase := range cases {
 		actual := encode(testcase)
 		if expected != actual {
-			t.Error(fmt.Sprintf("expected:\n%s\nactual:\n%s\n", expected, actual))
+			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
 	}
 }
 
 func Test_newReceivePackResult(t *testing.T) {
 	// need to get some git-receive-pack data to test with
-}
-
-func fail(expected, actual string) string {
-	return fmt.Sprintf("expected:\n%s\nactual:\n%s\n", expected, actual)
 }
