@@ -40,6 +40,7 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			fileExists(ctx.FullRepoPath))
 
 		if g.PreReceive != nil && !g.PreReceive(hookCtx) {
+			hookCtx.close()
 			return
 		}
 
