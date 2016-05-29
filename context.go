@@ -49,7 +49,6 @@ func newHandlerContext(sv *gitHTTPServer, req *http.Request) (handlerContext, er
 	}
 
 	reqDataBytes, err := ioutil.ReadAll(req.Body)
-
 	if err != nil {
 		return handlerContext{}, errCouldNotReadReqBody
 	}
@@ -57,12 +56,17 @@ func newHandlerContext(sv *gitHTTPServer, req *http.Request) (handlerContext, er
 	advertise := req.Method == "GET"
 	isGetRefs := advertise && strings.Contains(req.URL.RequestURI(), "/info/refs?service=")
 	serviceType := serviceType(serviceTypeStr)
+	shouldRunHooks := serviceType.isReceivePack() && !advertise
+
+	if bytes.Equal(reqDataBytes, []byte("0000")) {
+		shouldRunHooks = false
+	}
 
 	return handlerContext{
 		gitHTTPServer:  sv,
 		ServiceType:    serviceType,
 		Advertisement:  advertise,
-		ShouldRunHooks: serviceType.isReceivePack() && !advertise,
+		ShouldRunHooks: shouldRunHooks,
 		IsGetRefs:      isGetRefs,
 		RepoName:       repoName,
 		FullRepoPath:   filepath.Join(sv.Path, repoName),
