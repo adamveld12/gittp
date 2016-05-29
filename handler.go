@@ -3,12 +3,13 @@ package gittp
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net/http"
 )
 
 func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if g.Debug {
-		fmt.Println("")
+		log.Println(req.Method, req.URL)
 	}
 
 	header := res.Header()
@@ -58,7 +59,14 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// might be wise to make a pre receive handler for creating repos if they don't exist
+	// and remove this code
 	if !repoExists && ctx.ServiceType.isReceivePack() && initRepository(ctx.FullRepoPath) != nil {
+
+		if g.Debug {
+			log.Println("creating repository")
+		}
+
 		res.WriteHeader(http.StatusNotFound)
 		return
 	}
