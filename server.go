@@ -1,6 +1,7 @@
 package gittp
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -37,7 +38,9 @@ func NewGitServer(config ServerConfig) (http.Handler, error) {
 	config.Path, _ = filepath.Abs(config.Path)
 
 	if _, err := os.Stat(config.Path); os.IsNotExist(err) {
-		return nil, os.ErrNotExist
+		if err := os.MkdirAll(config.Path, os.ModeDir|os.ModePerm); err != nil {
+			return nil, errors.New("Could not create repository path")
+		}
 	}
 
 	return &gitHTTPServer{
