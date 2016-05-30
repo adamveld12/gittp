@@ -51,13 +51,13 @@ func NewGitServer(config ServerConfig) (http.Handler, error) {
 // OnlyExistingRepositories is a pre receive hook that only accepts pushes to initialized repositories
 func OnlyExistingRepositories(h HookContext) bool {
 	if !h.RepoExists {
-		h.Writeln("The specifed repository is not initialized")
+		h.Writeln("Pushing to a repository that does not exist is not allowed.")
 	}
 
 	return h.RepoExists
 }
 
-// MasterOnly is a prereceive hook that only allows pushes to master
+// MasterOnly is a pre receive hook that only allows pushes to master
 func MasterOnly(h HookContext) bool {
 	if h.Branch == "refs/heads/master" {
 		return true
@@ -73,4 +73,17 @@ var repoRegex = regexp.MustCompile("^(?:/[\\w]+){2}.git")
 // UseGithubRepoNames enforces paths like /username/projectname.git
 func UseGithubRepoNames(h HookContext) bool {
 	return repoRegex.MatchString(h.Repository)
+}
+
+// Combine combines several PreReceiveHooks into one
+func CombinePreHooks(hooks ...PreReceiveHook) PreReceiveHook {
+	return func(h HookContext) bool {
+		for _, prh := range hooks {
+			if !prh(h) {
+				return false
+			}
+		}
+
+		return true
+	}
 }
