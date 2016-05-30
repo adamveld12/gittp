@@ -100,15 +100,18 @@ type HookContext struct {
 	Commit string
 	// RepoExists is true if the repository being pushed to exists on the remote. If this value is false and the PreReceiveHook succeeds, gittp will auto initialize a bare repo befure handling the request.
 	RepoExists bool
+	// Authorization is the authorization header used in the request.
+	Authorization string
 }
 
-func newHookContext(writer io.Writer, repo string, rp ReceivePackResult, repoExists bool) HookContext {
+func newHookContext(writer io.Writer, authorizationHeader, repo string, rp ReceivePackResult, repoExists bool) HookContext {
 	return HookContext{
 		writer,
 		repo,
 		rp.Branch,
 		rp.NewRef,
 		repoExists,
+		authorizationHeader,
 	}
 }
 

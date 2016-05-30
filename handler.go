@@ -37,6 +37,7 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if ctx.ShouldRunHooks {
 		receivePack := newReceivePackResult(ctx.Input)
 		hookCtx := newHookContext(res,
+			req.Header.Get("Authorization"),
 			ctx.RepoName,
 			receivePack,
 			repoExists)
