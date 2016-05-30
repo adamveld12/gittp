@@ -13,21 +13,31 @@ import (
 	"strings"
 )
 
-type streamCode string
-
-const (
-	packDataStreamCode = streamCode("\u0001")
-	progressStreamCode = streamCode("\u0002")
-	fatalStreamCode    = streamCode("\u0003")
-	defaultStreamCode  = progressStreamCode
-)
+type streamCode []byte
 
 var (
 	serviceRegexp         = regexp.MustCompile("(?:/info/refs\\?service=|/)(git-(?:receive|upload)-pack)$")
+	parseRepoNameRegexp   = regexp.MustCompile("((?:/info/refs\\?service=|/)(?:git-(?:receive|upload)-pack)$)")
 	errNoMatchingService  = errors.New("No matching service types found")
 	errCouldNotCreateRepo = errors.New("Could not create repository")
 	errCouldNotGetArchive = errors.New("Could not get an archive of the pushed refs")
+	errNotAGitRequest     = errors.New("requested url did not come from a git client")
+
+	packDataStreamCode = streamCode([]byte("\u0001"))
+	progressStreamCode = streamCode([]byte("\u0002"))
+	fatalStreamCode    = streamCode([]byte("\u0003"))
+	defaultStreamCode  = progressStreamCode
 )
+
+func parseRepoName(requestPath string) (string, error) {
+	match := parseRepoNameRegexp.FindStringSubmatch(requestPath)
+	if len(match) < 2 {
+		return "", errNotAGitRequest
+	}
+
+	path := strings.TrimSuffix(requestPath, match[1])
+	return strings.TrimPrefix(path, "/"), nil
+}
 
 func detectServiceType(url *url.URL) (string, error) {
 	match := serviceRegexp.FindStringSubmatch(url.RequestURI())
@@ -70,16 +80,6 @@ func runCmd(pack serviceType, repoPath string, input io.Reader, output io.Writer
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
-}
-
-func parseRepoName(requestPath string) (string, error) {
-	paths := strings.Split(requestPath, ".git")
-
-	if len(paths) <= 1 {
-		return "", errors.New("pushed url needs to be in user/project.git format\n" + requestPath)
-	}
-
-	return fmt.Sprintf("%s.git", paths[0]), nil
 }
 
 // ReceivePackResult represents the payload of git-send-pack
@@ -145,11 +145,8 @@ func readPacket(packetData []byte) ([]byte, error) {
 	return buf.Next(int(packetLength)), nil
 }
 
-func encode(message string) string {
-	return encodeWithPrefix(defaultStreamCode, message)
-}
-
-func encodeWithPrefix(streamCode streamCode, message string) string {
-	packet := fmt.Sprintf("%s%s", streamCode, message)
-	return fmt.Sprintf("%04X%s", len(packet)+4, packet)
+func encodeBytes(streamCode streamCode, msg []byte) []byte {
+	packet := append(streamCode, msg...)
+	packetLength := fmt.Sprintf("%04X", len(packet)+4)
+	return append([]byte(packetLength), packet...)
 }

@@ -36,11 +36,15 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	repoExists := fileExists(ctx.FullRepoPath)
 	if ctx.ShouldRunHooks {
 		receivePack := newReceivePackResult(ctx.Input)
-		hookCtx := newHookContext(res,
-			req.Header.Get("Authorization"),
+		hookCtx := HookContext{
+			res.(http.Flusher),
+			res,
 			ctx.RepoName,
-			receivePack,
-			repoExists)
+			receivePack.Branch,
+			receivePack.NewRef,
+			repoExists,
+			req.Header.Get("Authorization"),
+		}
 
 		if g.PreReceive != nil && !g.PreReceive(hookCtx) {
 			hookCtx.close()

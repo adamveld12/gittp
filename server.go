@@ -68,7 +68,7 @@ func MasterOnly(h HookContext) bool {
 	return false
 }
 
-var repoRegex = regexp.MustCompile("^(?:/[\\w]+){2}.git")
+var repoRegex = regexp.MustCompile("^(?:[\\w]+)/([\\w]+).git")
 
 // UseGithubRepoNames enforces paths like /username/projectname.git
 func UseGithubRepoNames(h HookContext) bool {

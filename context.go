@@ -41,11 +41,11 @@ func newHandlerContext(sv *gitHTTPServer, req *http.Request) (handlerContext, er
 		return handlerContext{}, errors.New("")
 	}
 
-	reqPath := req.URL.Path
+	reqPath := req.URL.String()
 
 	repoName, err := parseRepoName(reqPath)
 	if err != nil {
-		return handlerContext{}, errors.New("")
+		return handlerContext{}, err
 	}
 
 	reqDataBytes, err := ioutil.ReadAll(req.Body)
@@ -91,7 +91,8 @@ func (s serviceType) String() string {
 
 // HookContext represents the current context about an on going push for hook handlers. It contains the repo name, branch name, the commit hash and a sideband channel that can be used to write status update messsages to the client.
 type HookContext struct {
-	writer io.Writer
+	flusher http.Flusher
+	writer  io.Writer
 	// Repository is the name of the repository being pushed to
 	Repository string
 	// Branch is the name of the branch being pushed
@@ -104,33 +105,24 @@ type HookContext struct {
 	Authorization string
 }
 
-func newHookContext(writer io.Writer, authorizationHeader, repo string, rp ReceivePackResult, repoExists bool) HookContext {
-	return HookContext{
-		writer,
-		repo,
-		rp.Branch,
-		rp.NewRef,
-		repoExists,
-		authorizationHeader,
-	}
-}
-
 func (h HookContext) close() {
 	h.writer.Write([]byte("0000"))
+	h.flusher.Flush()
+}
+
+// Writes a []byte to the sideband
+func (h HookContext) Write(data []byte) (i int, e error) {
+	defer h.flusher.Flush()
+	return h.writer.Write(encodeBytes(defaultStreamCode, data))
 }
 
 // Writef writes a string to the SideChannel using a format string and parameters
 func (h HookContext) Writef(fmtString string, params ...interface{}) error {
-	return h.Write(fmt.Sprintf(fmtString, params...))
+	return h.Writeln(fmt.Sprintf(fmtString, params...))
 }
 
 // Write writes a string to the SideChannel
-func (h HookContext) Write(text string) error {
-	_, err := h.writer.Write([]byte(encode(text)))
-	return err
-}
-
-// Writeln writes a string to the SideChannel and terminates it with a LF
 func (h HookContext) Writeln(text string) error {
-	return h.Write(text + "\n")
+	_, err := h.Write([]byte(text + "\n"))
+	return err
 }

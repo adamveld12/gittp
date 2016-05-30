@@ -1,6 +1,7 @@
 package gittp
 
 import (
+	"bytes"
 	"fmt"
 	"net/url"
 	"testing"
@@ -46,32 +47,31 @@ func Test_buildPacket(t *testing.T) {
 	expected := fmt.Sprintf("001f# service=git-receive-pack\n0000")
 
 	if actual != expected {
-			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
+		t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 	}
 }
 
 func Test_parseRepoName(t *testing.T) {
 	testCases := map[string]string{
-		"/adam/project.git/user/refs?service=git-receive-pack":      "/adam/project.git",
-		"/adam/dude/project.git/user/refs?service=git-receive-pack": "/adam/dude/project.git",
-		"/adam/project.git":                                         "/adam/project.git",
-		"/adam/gittp.git/git-receive-pack":                          "/adam/gittp.git",
+		"/adam/project.git/info/refs?service=git-receive-pack":      "adam/project.git",
+		"/adam/dude/project.git/info/refs?service=git-receive-pack": "adam/dude/project.git",
+		"/adam/project.git":                                         errNotAGitRequest.Error(),
+		"/adam/gittp.git/git-receive-pack":                          "adam/gittp.git",
+		"/adam/gittp/info/refs?service=git-receive-pack":            "adam/gittp",
+		"/adam/dude/project/git-receive-pack":                       "adam/dude/project",
+		"/adamveld12/goku.git/info/refs?service=git-receive-pack":   "adamveld12/goku.git",
 	}
 
 	for input, expected := range testCases {
 		actual, err := parseRepoName(input)
 
-		if err != nil {
+		if err != nil && err.Error() != expected {
 			t.Error(err)
-		} else if actual != expected {
+		} else if err == nil && actual != expected {
 			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
 	}
 
-	// test err condition
-	if _, err := parseRepoName("/adam/project/user/refs?service=git-receive-pack"); err == nil {
-		t.Error("expected an error")
-	}
 }
 
 func Test_encode(t *testing.T) {
@@ -81,8 +81,8 @@ func Test_encode(t *testing.T) {
 	}
 
 	for expected, testcase := range cases {
-		actual := encode(testcase)
-		if expected != actual {
+		actual := encodeBytes(defaultStreamCode, []byte(testcase))
+		if !bytes.Equal([]byte(expected), actual) {
 			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
 	}
