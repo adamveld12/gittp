@@ -110,7 +110,7 @@ func (h HookContext) close() {
 	h.flusher.Flush()
 }
 
-// Writes a []byte to the sideband
+// Write writes a []byte to the sideband
 func (h HookContext) Write(data []byte) (i int, e error) {
 	defer h.flusher.Flush()
 	return h.writer.Write(encodeBytes(defaultStreamCode, data))
@@ -121,7 +121,7 @@ func (h HookContext) Writef(fmtString string, params ...interface{}) error {
 	return h.Writeln(fmt.Sprintf(fmtString, params...))
 }
 
-// Write writes a string to the SideChannel
+// Writeln writes a string to the SideChannel
 func (h HookContext) Writeln(text string) error {
 	_, err := h.Write([]byte(text + "\n"))
 	return err
