@@ -1,6 +1,6 @@
 # GITTP
 
-Host your own git server over HTTP.
+Host your own git server over HTTP. Effortlessly hook into pre and post receive events and write status updates back to the client.
 
 Comes in CLI and Library flavors.
 
@@ -38,13 +38,12 @@ func main() {
 	config := gittp.ServerConfig{
     Path: "./repositories",
     PreReceive: gittp.MasterOnly,
-    PostReceive: func(h gittp.HookContext){
+    PostReceive: func(h gittp.HookContext, archive []byte){
       h.Writef("Woohoo! Push to %s succeeded!\n", h.Repository)
     }
   }
 
-	handle, err := gittp.NewGitServer(config)
-
+	handle, _ := gittp.NewGitServer(config)
   log.Fatal(http.ListenAndServe(":80", handle))
 }
 ```
