@@ -1,6 +1,9 @@
 # GITTP
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/adamveld12/gittp)](https://goreportcard.com/report/github.com/adamveld12/gittp)
+[![GoDoc](https://godoc.org/github.com/adamveld12/gittp?status.svg)](http://godoc.org/github.com/adamvel12/gittp)
+[![Build Status](https://drone.io/github.com/adamveld12/gittp/status.png)](https://drone.io/github.com/adamveld12/gittp/latest)
+
 
 Host your own git server over HTTP. Effortlessly hook into pre and post receive events and write status updates back to the client.
 
