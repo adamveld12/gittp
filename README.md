@@ -13,13 +13,15 @@ Simply run `gittp` at your command line after installing the binary into your `$
 
 Available args:
 
-`-path`: Specify a file path where pushed repositories are stored. This folder must exist, and gittp will throw an error if it can't be found
+`-port`: The port that gittp listens on
 
-`-port`: Specify the port that gittp should listen on
+`-path`: Specify a file path where pushed repositories are stored. If this folder doesn't exist, gittp will create it for you
 
-`-masterOnly`: Only permits pushing to the master branch
+`-masterOnly`: Only permit pushing to the master branch
 
-`-debug`: turns on debug logging (currently WIP)
+`-autocreate`: Auto create repositories if they have not been created
+
+`-debug`: turns on debug logging
 
 ## How to Library
 
@@ -39,7 +41,7 @@ func main() {
     Path: "./repositories",
     PreReceive: gittp.MasterOnly,
     PostReceive: func(h gittp.HookContext, archive []byte){
-      h.Writef("Woohoo! Push to %s succeeded!\n", h.Repository)
+      h.Writef("Woohoo! Push to %s succeeded!\n", h.Branch)
     }
   }
 

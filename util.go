@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -16,9 +15,7 @@ import (
 type streamCode []byte
 
 var (
-	serviceRegexp         = regexp.MustCompile("(?:/info/refs\\?service=|/)(git-(?:receive|upload)-pack)$")
 	parseRepoNameRegexp   = regexp.MustCompile("((?:/info/refs\\?service=|/)(?:git-(?:receive|upload)-pack)$)")
-	errNoMatchingService  = errors.New("No matching service types found")
 	errCouldNotCreateRepo = errors.New("Could not create repository")
 	errCouldNotGetArchive = errors.New("Could not get an archive of the pushed refs")
 	errNotAGitRequest     = errors.New("requested url did not come from a git client")
@@ -39,15 +36,6 @@ func parseRepoName(requestPath string) (string, error) {
 	return strings.TrimPrefix(path, "/"), nil
 }
 
-func detectServiceType(url *url.URL) (string, error) {
-	match := serviceRegexp.FindStringSubmatch(url.RequestURI())
-	if len(match) < 2 {
-		return "", errNoMatchingService
-	}
-
-	return match[1], nil
-}
-
 func gitArchive(fullRepoPath, hash string) (io.Reader, error) {
 	cmd := exec.Command("git", "archive", hash)
 	cmd.Dir = fullRepoPath
@@ -63,16 +51,16 @@ func gitArchive(fullRepoPath, hash string) (io.Reader, error) {
 	return bytes.NewBuffer(tarArchive), nil
 }
 
-func runCmd(pack serviceType, repoPath string, input io.Reader, output io.Writer, advertise bool) error {
+func runCmd(pack string, repoPath string, input io.Reader, output io.Writer, advertise bool) error {
 	args := []string{"--stateless-rpc"}
 
 	if advertise {
-		args = append(args, "--advertise-refs", repoPath)
-	} else {
-		args = append(args, repoPath)
+		args = append(args, "--advertise-refs")
 	}
 
-	cmd := exec.Command(pack.String(), args...)
+	args = append(args, repoPath)
+
+	cmd := exec.Command(string(pack), args...)
 
 	cmd.Dir = repoPath
 	cmd.Stdin = input
@@ -82,8 +70,8 @@ func runCmd(pack serviceType, repoPath string, input io.Reader, output io.Writer
 	return cmd.Run()
 }
 
-// ReceivePackResult represents the payload of git-send-pack
-type ReceivePackResult struct {
+// receivePackResult represents the payload of git-send-pack
+type receivePackResult struct {
 	OldRef       string
 	NewRef       string
 	Branch       string
@@ -91,18 +79,19 @@ type ReceivePackResult struct {
 	Capabilities []string
 }
 
-func newReceivePackResult(packetData []byte) ReceivePackResult {
-	parsedPacketData, _ := readPacket(packetData)
+// TODO needs tests
+func newReceivePackResult(packData []byte) receivePackResult {
+	parsedPacketData, _ := readPackInfo(packData)
 	splits := bytes.Split(parsedPacketData, []byte("\x00"))
 
 	pushInfo := strings.Split(string(splits[0]), " ")
 	capabilities := strings.Split(string(splits[1]), " ")
 	capLen := len(capabilities) - 1
 
-	return ReceivePackResult{
+	return receivePackResult{
 		OldRef:       pushInfo[0],
 		NewRef:       pushInfo[1],
-		Branch:       pushInfo[2],
+		Branch:       strings.TrimPrefix(pushInfo[2], "refs/heads/"),
 		Capabilities: capabilities[:capLen],
 		Agent:        strings.TrimSuffix(capabilities[capLen], "0000PACK"),
 	}
@@ -132,7 +121,7 @@ func writePacket(payload string) []byte {
 }
 
 // TODO needs tests
-func readPacket(packetData []byte) ([]byte, error) {
+func readPackInfo(packetData []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(packetData)
 
 	packetLengthBytes := buf.Next(4)

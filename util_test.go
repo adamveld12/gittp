@@ -12,36 +12,6 @@ func parseURL(raw string) (parsed *url.URL) {
 	return
 }
 
-func Test_detectServiceType(t *testing.T) {
-	testCases := map[string]string{
-		"/info/refs?service=git-receive-pack": "git-receive-pack",
-		"/info/refs?service=git-upload-pack":  "git-upload-pack",
-		"/info/refs":                          errNoMatchingService.Error(),
-		"adam/testrepo.git/info/refs?service=git-receive-pack":       "git-receive-pack",
-		"adam/test/repo/info/refs/info/refs?service=git-upload-pack": "git-upload-pack",
-		"/git-receive-pack":                                          "git-receive-pack",
-		"/git-upload-pack":                                           "git-upload-pack",
-		"adam/test.git/git-receive-pack":                             "git-receive-pack",
-		"adam/test.git/git-upload-pack":                              "git-upload-pack",
-		"git-upload-pack/git-receive-pack":                           "git-receive-pack",
-		"git-receive-pack/git-upload-pack":                           "git-upload-pack",
-		"adam/test/git-upload-pack/git-receive-pack":                 "git-receive-pack",
-		"adam/test/git":                                              errNoMatchingService.Error(),
-	}
-
-	for rawURL, expected := range testCases {
-		actual, err := detectServiceType(parseURL(rawURL))
-
-		if err != nil && err.Error() != expected {
-			t.Logf("testing %s -> %s\n", rawURL, expected)
-			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, err.Error())
-		} else if err == nil && actual != expected {
-			t.Logf("testing %s -> %s\n", rawURL, expected)
-			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
-		}
-	}
-}
-
 func Test_buildPacket(t *testing.T) {
 	actual := string(writePacket("# service=git-receive-pack\n"))
 	expected := fmt.Sprintf("001f# service=git-receive-pack\n0000")
@@ -90,4 +60,7 @@ func Test_encode(t *testing.T) {
 
 func Test_newReceivePackResult(t *testing.T) {
 	// need to get some git-receive-pack data to test with
+	packData := []byte("00940000000000000000000000000000000000000000 68839ad5d8bedf1147c214e4897ca6ad8afbfecc refs/heads/master report-status side-band-64k agent=git/2.8.30000")
+
+	actual := readPackInfo(packData)
 }

@@ -7,23 +7,46 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 var (
+	serviceRegexp          = regexp.MustCompile("(?:/info/refs\\?service=|/)(git-(?:receive|upload)-pack)$")
+	errNoMatchingService   = errors.New("No matching service types found")
 	errCouldNotReadReqBody = errors.New("couldn't read request body")
 )
 
+func contentType(serviceType string, isAdvertisement bool) string {
+	handlerContentType := "result"
+
+	if isAdvertisement {
+		handlerContentType = "advertisement"
+	}
+
+	return fmt.Sprintf("application/x-%s-%s", serviceType, handlerContentType)
+}
+
+func detectServiceType(url *url.URL) (string, error) {
+	match := serviceRegexp.FindStringSubmatch(url.RequestURI())
+	if len(match) < 2 {
+		return "", errNoMatchingService
+	}
+
+	return match[1], nil
+}
+
 type handlerContext struct {
-	*gitHTTPServer
 	ShouldRunHooks bool
 	Advertisement  bool
+	IsReceivePack  bool
+	IsGetRefs      bool
 	FullRepoPath   string
 	RepoName       string
-	ServiceType    serviceType
+	ServiceType    string
 	Input          []byte
-	IsGetRefs      bool
 	Output         io.Writer
 }
 
@@ -35,10 +58,10 @@ func (h handlerContext) flush(res http.ResponseWriter) error {
 	return nil
 }
 
-func newHandlerContext(sv *gitHTTPServer, req *http.Request) (handlerContext, error) {
+func newHandlerContext(req *http.Request, repoPath string) (handlerContext, error) {
 	serviceTypeStr, err := detectServiceType(req.URL)
 	if err != nil {
-		return handlerContext{}, errors.New("")
+		return handlerContext{}, err
 	}
 
 	reqPath := req.URL.String()
@@ -48,45 +71,31 @@ func newHandlerContext(sv *gitHTTPServer, req *http.Request) (handlerContext, er
 		return handlerContext{}, err
 	}
 
+	advertise := req.Method == "GET"
+	isGetRefs := advertise && strings.Contains(req.URL.RequestURI(), "/info/refs?service=")
+	isReceivePack := serviceTypeStr == "git-receive-pack"
+	shouldRunHooks := isReceivePack && !advertise
+
 	reqDataBytes, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		return handlerContext{}, errCouldNotReadReqBody
 	}
-
-	advertise := req.Method == "GET"
-	isGetRefs := advertise && strings.Contains(req.URL.RequestURI(), "/info/refs?service=")
-	serviceType := serviceType(serviceTypeStr)
-	shouldRunHooks := serviceType.isReceivePack() && !advertise
 
 	if bytes.Equal(reqDataBytes, []byte("0000")) {
 		shouldRunHooks = false
 	}
 
 	return handlerContext{
-		gitHTTPServer:  sv,
-		ServiceType:    serviceType,
+		ServiceType:    serviceTypeStr,
+		IsReceivePack:  isReceivePack,
 		Advertisement:  advertise,
 		ShouldRunHooks: shouldRunHooks,
 		IsGetRefs:      isGetRefs,
 		RepoName:       repoName,
-		FullRepoPath:   filepath.Join(sv.Path, repoName),
+		FullRepoPath:   filepath.Join(repoPath, repoName),
 		Input:          reqDataBytes,
 		Output:         &bytes.Buffer{},
 	}, nil
-}
-
-type serviceType string
-
-func (s serviceType) isReceivePack() bool {
-	return s == "git-receive-pack"
-}
-
-func (s serviceType) isUploadPack() bool {
-	return s == "git-upload-pack"
-}
-
-func (s serviceType) String() string {
-	return string(s)
 }
 
 // HookContext represents the current context about an on going push for hook handlers. It contains the repo name, branch name, the commit hash and a sideband channel that can be used to write status update messsages to the client.
@@ -101,7 +110,7 @@ type HookContext struct {
 	Commit string
 	// RepoExists is true if the repository being pushed to exists on the remote. If this value is false and the PreReceiveHook succeeds, gittp will auto initialize a bare repo befure handling the request.
 	RepoExists bool
-	// Authorization is the authorization header used in the request.
+	// Authorization is the authorization header's value used in the request.
 	Authorization string
 }
 
@@ -110,18 +119,20 @@ func (h HookContext) close() {
 	h.flusher.Flush()
 }
 
-// Write writes a []byte to the sideband
+// Write writes a []byte to the git client
 func (h HookContext) Write(data []byte) (i int, e error) {
 	defer h.flusher.Flush()
+
 	return h.writer.Write(encodeBytes(defaultStreamCode, data))
 }
 
-// Writef writes a string to the SideChannel using a format string and parameters
+// Writef writes a string to the git client using a format string and parameters
 func (h HookContext) Writef(fmtString string, params ...interface{}) error {
-	return h.Writeln(fmt.Sprintf(fmtString, params...))
+	_, err := h.Write([]byte(fmt.Sprintf(fmtString, params...)))
+	return err
 }
 
-// Writeln writes a string to the SideChannel
+// Writeln writes a string to the git client
 func (h HookContext) Writeln(text string) error {
 	_, err := h.Write([]byte(text + "\n"))
 	return err

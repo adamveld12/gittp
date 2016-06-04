@@ -1,3 +1,5 @@
 true
 gittp
 repositories/*
+.vscode
+test/

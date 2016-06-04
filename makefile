@@ -1,6 +1,6 @@
-dev: build-cli
+dev: clean build-cli
 	mkdir -p ./repositories
-	./gittp -port 8080 -debug -path ./repositories -masteronly
+	./gittp -port 8080 -autocreate -masteronly -debug -path ./repositories 
 
 build-cli:
 	go build -race ./cli/gittp
@@ -15,3 +15,6 @@ test:
 git_debug:
 	export HTTP_PROXY=http://localhost:8080
 	export GIT_CURL_VERBOSE=1
+
+check:
+	golint $$(pwd)/*.go
