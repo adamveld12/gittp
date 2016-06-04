@@ -1,17 +1,14 @@
 package gittp
 
-import (
-	"net/http"
-	"regexp"
-)
+import "regexp"
 
 // CreateRepo will always create a new repository if one does not exist
-func CreateRepo(http.Header) bool {
+func CreateRepo(reponame string) bool {
 	return true
 }
 
 // DenyCreateRepo will always deny creation of new repositories over git push
-func DenyCreateRepo(http.Header) bool {
+func DenyCreateRepo(reponame string) bool {
 	return false
 }
 

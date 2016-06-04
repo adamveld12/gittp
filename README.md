@@ -1,5 +1,7 @@
 # GITTP
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/adamveld12/gittp)](https://goreportcard.com/report/github.com/adamveld12/gittp)
+
 Host your own git server over HTTP. Effortlessly hook into pre and post receive events and write status updates back to the client.
 
 Comes in CLI and Library flavors.

@@ -18,7 +18,7 @@ type PreReceiveHook func(HookContext) bool
 type PostReceiveHook func(HookContext, io.Reader)
 
 // PreCreateHook is a func called before a missing repository is created. Returning false from this handler will prevent a new repository from being created.
-type PreCreateHook func(http.Header) bool
+type PreCreateHook func(string) bool
 
 // ServerConfig is a configuration object for NewGitServer
 type ServerConfig struct {
@@ -89,14 +89,14 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	repoExists := fileExists(ctx.FullRepoPath)
 
 	if ctx.ShouldRunHooks {
-		ok, hookContinuation := g.runHooks(ctx, res, req.Header.Get("Authorization"), repoExists)
+		ok, hookContinuation := g.runHooks(ctx, res, repoExists)
 		defer hookContinuation()
 		if !ok {
 			return
 		}
 	}
 
-	if err := g.createRepoIfMissing(ctx, req.Header, repoExists); err != nil {
+	if err := g.createRepoIfMissing(res, ctx, repoExists); err != nil {
 		res.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -119,22 +119,11 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (g *gitHTTPServer) runHooks(ctx handlerContext, res http.ResponseWriter, authHeader string, repoExists bool) (bool, func()) {
+func (g *gitHTTPServer) runHooks(ctx handlerContext, res http.ResponseWriter, repoExists bool) (bool, func()) {
 	receivePack := newReceivePackResult(ctx.Input)
-	hookCtx := HookContext{
-		res.(http.Flusher),
-		res,
-		ctx.RepoName,
-		receivePack.Branch,
-		receivePack.NewRef,
-		repoExists,
-		authHeader,
-	}
+	hookCtx := newHookContext(res, ctx, repoExists)
 
-	flush := func() {
-		// log.Println("FLUSHING HOOK CTX")
-		// hookCtx.close()
-	}
+	flush := func() {}
 
 	if !g.PreReceive(hookCtx) {
 		if g.Debug {
@@ -154,14 +143,14 @@ func (g *gitHTTPServer) runHooks(ctx handlerContext, res http.ResponseWriter, au
 	return true, flush
 }
 
-func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext, headers http.Header, repoExists bool) error {
+func (g *gitHTTPServer) createRepoIfMissing(res http.ResponseWriter, ctx handlerContext, repoExists bool) error {
 	shouldRunCreate := !repoExists && ctx.IsReceivePack
 
 	if !shouldRunCreate {
 		return nil
 	}
 
-	if g.PreCreate(headers) {
+	if g.PreCreate(ctx.RepoName) {
 		if err := initRepository(ctx.FullRepoPath); err != nil {
 			log.Println("Could not initialize repository", err)
 			return err
@@ -169,6 +158,9 @@ func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext, headers http.Hea
 			log.Println("creating repository")
 		}
 	} else {
+		if g.Debug {
+			log.Print("pushing is disallowed")
+		}
 		return errors.New("Cannot create repository")
 	}
 

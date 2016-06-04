@@ -98,10 +98,20 @@ func newHandlerContext(req *http.Request, repoPath string) (handlerContext, erro
 	}, nil
 }
 
+func newHookContext(res http.ResponseWriter, ctx handlerContext, exists bool) HookContext {
+	receivePack := newReceivePackResult(ctx.Input)
+	return HookContext{
+		ctx.RepoName,
+		receivePack.Branch,
+		receivePack.NewRef,
+		exists,
+		res,
+		res.(http.Flusher),
+	}
+}
+
 // HookContext represents the current context about an on going push for hook handlers. It contains the repo name, branch name, the commit hash and a sideband channel that can be used to write status update messsages to the client.
 type HookContext struct {
-	flusher http.Flusher
-	writer  io.Writer
 	// Repository is the name of the repository being pushed to
 	Repository string
 	// Branch is the name of the branch being pushed
@@ -110,20 +120,16 @@ type HookContext struct {
 	Commit string
 	// RepoExists is true if the repository being pushed to exists on the remote. If this value is false and the PreReceiveHook succeeds, gittp will auto initialize a bare repo befure handling the request.
 	RepoExists bool
-	// Authorization is the authorization header's value used in the request.
-	Authorization string
-}
 
-func (h HookContext) close() {
-	h.writer.Write([]byte("0000"))
-	h.flusher.Flush()
+	w io.Writer
+	f http.Flusher
 }
 
 // Write writes a []byte to the git client
 func (h HookContext) Write(data []byte) (i int, e error) {
-	defer h.flusher.Flush()
+	defer h.f.Flush()
 
-	return h.writer.Write(encodeBytes(defaultStreamCode, data))
+	return h.w.Write(encodeBytes(defaultStreamCode, data))
 }
 
 // Writef writes a string to the git client using a format string and parameters
