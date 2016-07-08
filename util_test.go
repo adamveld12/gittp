@@ -60,7 +60,18 @@ func Test_encode(t *testing.T) {
 
 func Test_newReceivePackResult(t *testing.T) {
 	// need to get some git-receive-pack data to test with
-	packData := []byte("00940000000000000000000000000000000000000000 68839ad5d8bedf1147c214e4897ca6ad8afbfecc refs/heads/master report-status side-band-64k agent=git/2.8.30000")
+	packData := []byte("00940000000000000000000000000000000000000000 68839ad5d8bedf1147c214e4897ca6ad8afbfecc refs/heads/master\x00report-status side-band-64k agent=git/2.8.30000")
 
-	actual := readPackInfo(packData)
+	actual := newReceivePackResult(packData)
+	if actual.Agent != "git/2.8.3" {
+		t.Error(actual.Agent)
+	}
+
+	if actual.Branch != "refs/heads/master" {
+		t.Error(actual.Branch)
+	}
+
+	if actual.NewRef != "68839ad5d8bedf1147c214e4897ca6ad8afbfecc" {
+		t.Error(actual.NewRef)
+	}
 }

@@ -93,7 +93,7 @@ func newReceivePackResult(packData []byte) receivePackResult {
 		NewRef:       pushInfo[1],
 		Branch:       strings.TrimPrefix(pushInfo[2], "refs/heads/"),
 		Capabilities: capabilities[:capLen],
-		Agent:        strings.TrimSuffix(capabilities[capLen], "0000PACK"),
+		Agent:        strings.TrimPrefix(strings.TrimSuffix(capabilities[capLen], "0000"), "agent="),
 	}
 }
 
