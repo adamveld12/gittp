@@ -1,6 +1,10 @@
 package gittp
 
-import "regexp"
+import (
+	"errors"
+	"regexp"
+	"time"
+)
 
 // CreateRepo will always create a new repository if one does not exist
 func CreateRepo(reponame string) bool {
@@ -15,35 +19,43 @@ func DenyCreateRepo(reponame string) bool {
 var repoRegex = regexp.MustCompile("^(?:[\\w]+)/([\\w]+).git")
 
 // UseGithubRepoNames enforces paths like /username/projectname.git
-func UseGithubRepoNames(h HookContext) bool {
-	return repoRegex.MatchString(h.Repository)
+func UseGithubRepoNames(h HookContext) error {
+	if repoRegex.MatchString(h.Repository) {
+		return nil
+	}
+
+	return errors.New("Names must be in <username>/<projectname> format")
 }
 
 // MasterOnly is a pre receive hook that only allows pushes to master
-func MasterOnly(h HookContext) bool {
-	if h.Branch == "master" {
-		return true
+func MasterOnly(h HookContext) error {
+	if h.Branch == "refs/heads/master" {
+		return nil
 	}
 
-	h.Writeln("Only pushing to master is allowed.")
+	h.Writeln("Shitbag")
+	time.Sleep(time.Second)
+	h.Writeln("Shitbag again")
+	time.Sleep(time.Second)
+	h.Fatal("Only ref updates to refs/heads/master are allowed.")
 
-	return false
+	return errors.New("hook declined")
 }
 
 // CombinePreHooks combines several PreReceiveHooks into one
 func CombinePreHooks(hooks ...PreReceiveHook) PreReceiveHook {
-	return func(h HookContext) bool {
+	return func(h HookContext) error {
 		for _, prh := range hooks {
-			if !prh(h) {
-				return false
+			if err := prh(h); err != nil {
+				return err
 			}
 		}
 
-		return true
+		return nil
 	}
 }
 
 // NoopPreReceive is a pre receive hook that is always successfull. This is the default if no hook is defined
-func NoopPreReceive(h HookContext) bool {
-	return true
+func NoopPreReceive(h HookContext) error {
+	return nil
 }

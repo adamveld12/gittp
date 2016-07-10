@@ -44,6 +44,20 @@ func Test_parseRepoName(t *testing.T) {
 
 }
 
+func Test_pktline(t *testing.T) {
+	cases := map[string]string{
+		"000fHello world":   "Hello world",
+		"0017☃woooo☃☃woooo": "☃woooo☃☃woooo",
+	}
+
+	for expected, testcase := range cases {
+		actual := pktline([]byte(testcase))
+		if !bytes.Equal([]byte(expected), actual) {
+			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
+		}
+	}
+}
+
 func Test_encode(t *testing.T) {
 	cases := map[string]string{
 		"0010\u0002Hello world":   "Hello world",
@@ -51,7 +65,7 @@ func Test_encode(t *testing.T) {
 	}
 
 	for expected, testcase := range cases {
-		actual := encodeBytes(defaultStreamCode, []byte(testcase))
+		actual := encodeSideband(progressStreamCode, testcase)
 		if !bytes.Equal([]byte(expected), actual) {
 			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
@@ -69,6 +83,10 @@ func Test_newReceivePackResult(t *testing.T) {
 
 	if actual.Branch != "refs/heads/master" {
 		t.Error(actual.Branch)
+	}
+
+	if actual.OldRef != "0000000000000000000000000000000000000000" {
+		t.Error(actual.OldRef)
 	}
 
 	if actual.NewRef != "68839ad5d8bedf1147c214e4897ca6ad8afbfecc" {

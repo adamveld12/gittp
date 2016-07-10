@@ -50,5 +50,7 @@ func parseConfiguration(args []string, config *gittp.ServerConfig) (port string,
 		config.PreReceive = gittp.MasterOnly
 	}
 
+	log.SetFlags(log.Lshortfile | log.Ldate)
+
 	return
 }

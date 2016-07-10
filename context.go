@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -13,11 +12,89 @@ import (
 	"strings"
 )
 
+type streamCode []byte
+
 var (
 	serviceRegexp          = regexp.MustCompile("(?:/info/refs\\?service=|/)(git-(?:receive|upload)-pack)$")
 	errNoMatchingService   = errors.New("No matching service types found")
 	errCouldNotReadReqBody = errors.New("couldn't read request body")
+
+	packDataStreamCode = streamCode([]byte{1})
+	progressStreamCode = streamCode([]byte{2})
+	fatalStreamCode    = streamCode([]byte{3})
 )
+
+type handlerContext struct {
+	receivePackResult
+	ShouldRunHooks bool
+	Advertisement  bool
+	IsReceivePack  bool
+	IsGetRefs      bool
+	RepoExists     bool
+	FullRepoPath   string
+	RepoName       string
+	ServiceType    string
+	Input          io.Reader
+	Output         io.Writer
+}
+
+func (h handlerContext) flush(res http.ResponseWriter) error {
+
+	if _, err := io.Copy(res, h.Input); err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
+}
+
+func newHandlerContext(res http.ResponseWriter, req *http.Request, repoPath string) (handlerContext, error) {
+	serviceTypeStr, err := detectServiceType(req.URL)
+	if err != nil {
+		return handlerContext{}, err
+	}
+
+	url := req.URL
+	repoName, err := parseRepoName(url.String())
+	if err != nil {
+		return handlerContext{}, err
+	}
+
+	advertise := req.Method == "GET"
+	isGetRefs := advertise && strings.Contains(url.RequestURI(), "/info/refs?service=")
+	isReceivePack := serviceTypeStr == "git-receive-pack"
+	shouldRunHooks := isReceivePack && !advertise
+
+	// the request body in a multi reader
+	refsHeader, err := readPackInfo(req.Body)
+	if err != nil {
+		return handlerContext{}, errCouldNotReadReqBody
+	}
+
+	if len(refsHeader) <= 4 {
+		shouldRunHooks = false
+	}
+
+	fullRepoPath := filepath.Join(repoPath, repoName)
+
+	var rpr receivePackResult
+	if !advertise && isReceivePack {
+		rpr = newReceivePackResult(refsHeader)
+	}
+
+	return handlerContext{
+		receivePackResult: rpr,
+		ServiceType:       serviceTypeStr,
+		IsReceivePack:     isReceivePack,
+		Advertisement:     advertise,
+		ShouldRunHooks:    shouldRunHooks,
+		IsGetRefs:         isGetRefs,
+		RepoName:          repoName,
+		RepoExists:        fileExists(fullRepoPath),
+		FullRepoPath:      fullRepoPath,
+		Input:             io.MultiReader(bytes.NewBuffer(refsHeader), req.Body),
+		Output:            res,
+	}, nil
+}
 
 func contentType(serviceType string, isAdvertisement bool) string {
 	handlerContentType := "result"
@@ -38,75 +115,13 @@ func detectServiceType(url *url.URL) (string, error) {
 	return match[1], nil
 }
 
-type handlerContext struct {
-	ShouldRunHooks bool
-	Advertisement  bool
-	IsReceivePack  bool
-	IsGetRefs      bool
-	FullRepoPath   string
-	RepoName       string
-	ServiceType    string
-	Input          []byte
-	Output         io.Writer
-}
-
-func (h handlerContext) flush(res http.ResponseWriter) error {
-	if _, err := io.Copy(res, h.Output.(io.Reader)); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func newHandlerContext(req *http.Request, repoPath string) (handlerContext, error) {
-	serviceTypeStr, err := detectServiceType(req.URL)
-	if err != nil {
-		return handlerContext{}, err
-	}
-
-	reqPath := req.URL.String()
-
-	repoName, err := parseRepoName(reqPath)
-	if err != nil {
-		return handlerContext{}, err
-	}
-
-	advertise := req.Method == "GET"
-	isGetRefs := advertise && strings.Contains(req.URL.RequestURI(), "/info/refs?service=")
-	isReceivePack := serviceTypeStr == "git-receive-pack"
-	shouldRunHooks := isReceivePack && !advertise
-
-	reqDataBytes, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		return handlerContext{}, errCouldNotReadReqBody
-	}
-
-	if bytes.Equal(reqDataBytes, []byte("0000")) {
-		shouldRunHooks = false
-	}
-
-	return handlerContext{
-		ServiceType:    serviceTypeStr,
-		IsReceivePack:  isReceivePack,
-		Advertisement:  advertise,
-		ShouldRunHooks: shouldRunHooks,
-		IsGetRefs:      isGetRefs,
-		RepoName:       repoName,
-		FullRepoPath:   filepath.Join(repoPath, repoName),
-		Input:          reqDataBytes,
-		Output:         &bytes.Buffer{},
-	}, nil
-}
-
-func newHookContext(res http.ResponseWriter, ctx handlerContext, exists bool) HookContext {
-	receivePack := newReceivePackResult(ctx.Input)
+func newHookContext(ctx handlerContext) HookContext {
 	return HookContext{
 		ctx.RepoName,
-		receivePack.Branch,
-		receivePack.NewRef,
-		exists,
-		res,
-		res.(http.Flusher),
+		ctx.Branch,
+		ctx.NewRef,
+		ctx.RepoExists,
+		ctx.Output,
 	}
 }
 
@@ -122,20 +137,31 @@ type HookContext struct {
 	RepoExists bool
 
 	w io.Writer
-	f http.Flusher
+}
+
+func flush(w io.Writer) {
+	f, ok := w.(http.Flusher)
+	if ok {
+		f.Flush()
+	}
+}
+
+// Fatal writes a fatal error to the git client. Useful when you want to signal that a push failed
+func (h HookContext) Fatal(msg string) error {
+	_, err := h.w.Write(encodeSideband(fatalStreamCode, "error: "+msg+"\n"))
+	return err
 }
 
 // Write writes a []byte to the git client
 func (h HookContext) Write(data []byte) (i int, e error) {
-	defer h.f.Flush()
+	defer flush(h.w)
 
-	return h.w.Write(encodeBytes(defaultStreamCode, data))
+	return h.w.Write(pktline(append(progressStreamCode, data...)))
 }
 
-// Writef writes a string to the git client using a format string and parameters
-func (h HookContext) Writef(fmtString string, params ...interface{}) error {
-	_, err := h.Write([]byte(fmt.Sprintf(fmtString, params...)))
-	return err
+// Writelnf writes a string to the git client using a format string and parameters
+func (h HookContext) Writelnf(fmtString string, params ...interface{}) error {
+	return h.Writeln(fmt.Sprintf(fmtString, params...))
 }
 
 // Writeln writes a string to the git client

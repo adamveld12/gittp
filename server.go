@@ -1,7 +1,6 @@
 package gittp
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,7 @@ import (
 )
 
 // PreReceiveHook is a func called on pre receive. This is right before a git push is processed. Returning false from this handler will cancel the push to the remote, and returning true will allow the process to continue
-type PreReceiveHook func(HookContext) bool
+type PreReceiveHook func(HookContext) error
 
 // PostReceiveHook is a func called after git-receive-pack is ran. This is a good place to fire notifications.
 type PostReceiveHook func(HookContext, io.Reader)
@@ -64,17 +63,19 @@ func NewGitServer(config ServerConfig) (http.Handler, error) {
 type gitHTTPServer struct{ ServerConfig }
 
 func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+
 	if g.Debug {
 		log.Println(req.Method, req.URL)
 	}
 
 	header := res.Header()
 
+	header.Set("Server", "gittp")
 	header.Set("Expires", "Fri, 01 Jan 1980 00:00:00 GMT")
 	header.Set("Pragma", "no-cache")
 	header.Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
 
-	ctx, err := newHandlerContext(req, g.Path)
+	ctx, err := newHandlerContext(res, req, g.Path)
 	if err != nil {
 		if g.Debug {
 			log.Println("could not create handler context", err)
@@ -86,17 +87,15 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	header.Set("Content-Type", contentType(ctx.ServiceType, ctx.Advertisement))
 
-	repoExists := fileExists(ctx.FullRepoPath)
-
 	if ctx.ShouldRunHooks {
-		ok, hookContinuation := g.runHooks(ctx, res, repoExists)
+		ok, hookContinuation := g.runHooks(ctx)
 		defer hookContinuation()
 		if !ok {
 			return
 		}
 	}
 
-	if err := g.createRepoIfMissing(res, ctx, repoExists); err != nil {
+	if err := g.createRepoIfMissing(ctx); err != nil {
 		res.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -105,37 +104,38 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		ctx.Output.Write(writePacket(fmt.Sprintf("# service=%s\n", ctx.ServiceType)))
 	}
 
-	if err := runCmd(ctx.ServiceType,
-		ctx.FullRepoPath,
-		bytes.NewBuffer(ctx.Input),
-		ctx.Output,
-		ctx.Advertisement); err != nil {
+	err = runCmd(ctx.ServiceType, ctx.FullRepoPath, ctx.Input, ctx.Output, ctx.Advertisement)
+	if err != nil {
 
 		if g.Debug {
 			log.Println("an error occurred running", ctx.ServiceType, err)
 		}
+
 		res.WriteHeader(http.StatusNotModified)
 		return
 	}
+	defer fmt.Println()
 }
 
-func (g *gitHTTPServer) runHooks(ctx handlerContext, res http.ResponseWriter, repoExists bool) (bool, func()) {
-	receivePack := newReceivePackResult(ctx.Input)
-	hookCtx := newHookContext(res, ctx, repoExists)
+func (g *gitHTTPServer) runHooks(ctx handlerContext) (bool, func()) {
+	hookCtx := newHookContext(ctx)
 
 	flush := func() {}
 
-	if !g.PreReceive(hookCtx) {
-		if g.Debug {
-			log.Println("pre receive hook failed")
-		}
+	if err := g.PreReceive(hookCtx); err != nil {
+		statusHeader := pktline([]byte("unpack ok\n"))
+		reportStatus := pktline([]byte(fmt.Sprintf("ng %s %v\n", hookCtx.Branch, err)))
+		payload := fmt.Sprintf("%s%s", statusHeader, reportStatus)
+		status := writePacket(fmt.Sprintf("\x01%s0000", payload))
+		ctx.Output.Write(status)
 		return false, flush
 	}
 
 	if g.PostReceive != nil {
 		return true, func() {
 			defer flush()
-			archive, _ := gitArchive(ctx.FullRepoPath, receivePack.NewRef)
+			// so we can get real time progress writes
+			archive, _ := gitArchive(ctx.FullRepoPath, hookCtx.Commit)
 			g.PostReceive(hookCtx, archive)
 		}
 	}
@@ -143,8 +143,8 @@ func (g *gitHTTPServer) runHooks(ctx handlerContext, res http.ResponseWriter, re
 	return true, flush
 }
 
-func (g *gitHTTPServer) createRepoIfMissing(res http.ResponseWriter, ctx handlerContext, repoExists bool) error {
-	shouldRunCreate := !repoExists && ctx.IsReceivePack
+func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext) error {
+	shouldRunCreate := !ctx.RepoExists && ctx.IsReceivePack
 
 	if !shouldRunCreate {
 		return nil
@@ -163,6 +163,5 @@ func (g *gitHTTPServer) createRepoIfMissing(res http.ResponseWriter, ctx handler
 		}
 		return errors.New("Cannot create repository")
 	}
-
 	return nil
 }
