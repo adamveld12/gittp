@@ -110,8 +110,6 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		if g.Debug {
 			log.Println("an error occurred running", ctx.ServiceType, err)
 		}
-
-		res.WriteHeader(http.StatusNotModified)
 	}
 }
 
@@ -142,12 +140,12 @@ func (g *gitHTTPServer) runHooks(ctx handlerContext) (bool, func()) {
 }
 
 func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext) error {
-	shouldRunCreate := !ctx.RepoExists && ctx.IsReceivePack
-	if shouldRunCreate {
+	shouldRunCreate := !ctx.RepoExists && ctx.Advertisement
+	if ctx.RepoExists {
 		return nil
 	}
 
-	if g.PreCreate(ctx.RepoName) {
+	if shouldRunCreate && g.PreCreate(ctx.RepoName) {
 		if err := initRepository(ctx.FullRepoPath); err != nil {
 			log.Println("Could not initialize repository", err)
 			return err
@@ -160,5 +158,6 @@ func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext) error {
 		}
 		return errors.New("Cannot create repository")
 	}
+
 	return nil
 }
