@@ -48,7 +48,7 @@ func NewGitServer(config ServerConfig) (http.Handler, error) {
 	}
 
 	if config.PreCreate == nil {
-		config.PreCreate = DenyCreateRepo
+		config.PreCreate = CreateRepo
 	}
 
 	if config.PreReceive == nil {
@@ -112,9 +112,7 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		}
 
 		res.WriteHeader(http.StatusNotModified)
-		return
 	}
-	defer fmt.Println()
 }
 
 func (g *gitHTTPServer) runHooks(ctx handlerContext) (bool, func()) {
@@ -145,8 +143,7 @@ func (g *gitHTTPServer) runHooks(ctx handlerContext) (bool, func()) {
 
 func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext) error {
 	shouldRunCreate := !ctx.RepoExists && ctx.IsReceivePack
-
-	if !shouldRunCreate {
+	if shouldRunCreate {
 		return nil
 	}
 

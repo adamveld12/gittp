@@ -39,7 +39,6 @@ type handlerContext struct {
 }
 
 func (h handlerContext) flush(res http.ResponseWriter) error {
-
 	if _, err := io.Copy(res, h.Input); err != nil && err != io.EOF {
 		return err
 	}
@@ -135,8 +134,7 @@ type HookContext struct {
 	Commit string
 	// RepoExists is true if the repository being pushed to exists on the remote. If this value is false and the PreReceiveHook succeeds, gittp will auto initialize a bare repo befure handling the request.
 	RepoExists bool
-
-	w io.Writer
+	w          io.Writer
 }
 
 func flush(w io.Writer) {
@@ -155,7 +153,6 @@ func (h HookContext) Fatal(msg string) error {
 // Write writes a []byte to the git client
 func (h HookContext) Write(data []byte) (i int, e error) {
 	defer flush(h.w)
-
 	return h.w.Write(pktline(append(progressStreamCode, data...)))
 }
 
