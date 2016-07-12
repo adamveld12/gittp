@@ -44,13 +44,14 @@ import (
 func main() {
 	config := gittp.ServerConfig{
     Path: "./repositories",
+    PreCreate: gittp.UseGithubRepoNames,
     PreReceive: gittp.MasterOnly,
-    PostReceive: func(h gittp.HookContext, archive []byte){
+    PostReceive: func(h gittp.HookContext, archive io.Reader){
       h.Writef("Woohoo! Push to %s succeeded!\n", h.Branch)
     }
   }
 
-	handle, _ := gittp.NewGitServer(config)
+  handle, _ := gittp.NewGitServer(config)
   log.Fatal(http.ListenAndServe(":80", handle))
 }
 ```
