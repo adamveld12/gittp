@@ -25,7 +25,6 @@ func UseGithubRepoNames(reponame string) bool {
 // MasterOnly is a pre receive hook that only allows pushes to master
 func MasterOnly(h *HookContext) error {
 	if h.Branch == "refs/heads/master" {
-		h.Writeln("Hooray I don't give a h*ck")
 		return nil
 	}
 
