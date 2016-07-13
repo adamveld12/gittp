@@ -20,10 +20,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	config.PostReceive = func(h gittp.HookContext, archive []byte) {
-		h.Writeln("Shit fuck")
-	}
-
 	sv := manners.NewServer()
 
 	sv.Addr = addr
