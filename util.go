@@ -17,31 +17,31 @@ var (
 	errCouldNotCreateRepo = errors.New("Could not create repository")
 	errCouldNotGetArchive = errors.New("Could not get an archive of the pushed refs")
 	errNotAGitRequest     = errors.New("requested url did not come from a git client")
+	null                  = []byte("\x00")
 )
 
-// receivePackResult represents the payload of git-send-pack
-type receivePackResult struct {
-	OldRef       string
-	NewRef       string
+// packetHeader represents the payload of git-send-pack
+type packetHeader struct {
+	Last         string
+	Head         string
 	Branch       string
 	Agent        string
 	Capabilities []string
 }
 
-// TODO needs tests
-func newReceivePackResult(packHeader []byte) receivePackResult {
+func newPacketHeader(packHeader []byte) packetHeader {
 	if len(packHeader) <= 4 {
-		return receivePackResult{}
+		return packetHeader{}
 	}
 
-	splits := bytes.Split(packHeader[4:], []byte("\x00"))
+	splits := bytes.Split(packHeader[4:], null)
 	pushInfo := strings.Split(string(splits[0]), " ")
 	capabilities := strings.Split(string(splits[1]), " ")
 	capLen := len(capabilities) - 1
 
-	return receivePackResult{
-		OldRef:       pushInfo[0],
-		NewRef:       pushInfo[1],
+	return packetHeader{
+		Last:         pushInfo[0],
+		Head:         pushInfo[1],
 		Branch:       pushInfo[2],
 		Capabilities: capabilities[:capLen],
 		Agent:        strings.TrimPrefix(strings.TrimSuffix(capabilities[capLen], "0000"), "agent="),
@@ -50,7 +50,6 @@ func newReceivePackResult(packHeader []byte) receivePackResult {
 
 // TODO needs tests
 func readPackInfo(packetData io.Reader) ([]byte, error) {
-
 	packetLengthBytes := make([]byte, 4)
 	_, err := io.ReadFull(packetData, packetLengthBytes)
 	if err == io.EOF {
@@ -77,48 +76,23 @@ func readPackInfo(packetData io.Reader) ([]byte, error) {
 	return append(packetLengthBytes, rawHeader...), nil
 }
 
-func initRepository(repoPath string) error {
-	if !fileExists(repoPath) {
-		if err := os.MkdirAll(repoPath, os.ModePerm|os.ModeDir); err != nil {
-			return err
-		}
-		cmd := exec.Command("git", "init", "--bare", repoPath)
-
-		return cmd.Run()
-	}
-
-	return nil
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return !os.IsNotExist(err)
-}
-
 // TODO needs tests
-func writePacket(payload string) []byte {
-	return append(
-		pktline([]byte(payload)),
-		pktline([]byte{})...)
-}
-
-func getHexLen(msg []byte) []byte {
-	return []byte(fmt.Sprintf("%04x", len(msg)+4))
-}
-
-func encodeSideband(sc streamCode, msg string) []byte {
-	msgBytes := []byte(msg)
-	payload := append(sc, msgBytes...)
-	return pktline(payload)
-}
-
-func pktline(msg []byte) []byte {
-	if len(msg) == 0 || msg == nil {
+func encodeWithPrefix(psc streamCode, data string) []byte {
+	if len(data) == 0 {
 		return []byte("0000")
 	}
 
-	packetLength := getHexLen(msg)
-	return append(packetLength, msg...)
+	return pktline(fmt.Sprintf("%s%s", psc, data))
+}
+
+func pktline(msg string) []byte {
+	if len(msg) == 0 {
+		return []byte("0000")
+	}
+
+	msgBytes := []byte(msg)
+	packetLength := fmt.Sprintf("%04x", len(msgBytes)+4)
+	return append([]byte(packetLength), msgBytes...)
 }
 
 func parseRepoName(requestPath string) (string, error) {
@@ -131,18 +105,17 @@ func parseRepoName(requestPath string) (string, error) {
 	return strings.TrimPrefix(path, "/"), nil
 }
 
-func gitArchive(fullRepoPath, hash string) (io.Reader, error) {
+func gitArchive(fullRepoPath, hash string) ([]byte, error) {
 	cmd := exec.Command("git", "archive", hash)
 	cmd.Dir = fullRepoPath
 	cmd.Stderr = os.Stdout
 
 	tarArchive, err := cmd.Output()
-
 	if err != nil {
 		return nil, errCouldNotGetArchive
 	}
 
-	return bytes.NewBuffer(tarArchive), nil
+	return tarArchive, nil
 }
 
 func runCmd(pack string, repoPath string, input io.Reader, output io.Writer, advertise bool) error {
@@ -158,8 +131,21 @@ func runCmd(pack string, repoPath string, input io.Reader, output io.Writer, adv
 
 	cmd.Dir = repoPath
 	cmd.Stdin = input
-	cmd.Stdout = io.MultiWriter(output, os.Stdout) //output
-	//cmd.Stderr = os.Stderr
+	cmd.Stdout = output
 
 	return cmd.Run()
+}
+
+func initRepository(repoPath string) error {
+	if _, err := os.Stat(repoPath); !!os.IsNotExist(err) {
+		if err := os.MkdirAll(repoPath, os.ModePerm|os.ModeDir); err != nil {
+			return err
+		}
+
+		cmd := exec.Command("git", "init", "--bare", repoPath)
+
+		return cmd.Run()
+	}
+
+	return nil
 }

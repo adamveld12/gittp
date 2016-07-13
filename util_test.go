@@ -12,15 +12,6 @@ func parseURL(raw string) (parsed *url.URL) {
 	return
 }
 
-func Test_buildPacket(t *testing.T) {
-	actual := string(writePacket("# service=git-receive-pack\n"))
-	expected := fmt.Sprintf("001f# service=git-receive-pack\n0000")
-
-	if actual != expected {
-		t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
-	}
-}
-
 func Test_parseRepoName(t *testing.T) {
 	testCases := map[string]string{
 		"/adam/project.git/info/refs?service=git-receive-pack":      "adam/project.git",
@@ -51,7 +42,7 @@ func Test_pktline(t *testing.T) {
 	}
 
 	for expected, testcase := range cases {
-		actual := pktline([]byte(testcase))
+		actual := pktline(testcase)
 		if !bytes.Equal([]byte(expected), actual) {
 			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
@@ -65,18 +56,20 @@ func Test_encode(t *testing.T) {
 	}
 
 	for expected, testcase := range cases {
-		actual := encodeSideband(progressStreamCode, testcase)
+		actual := encodeWithPrefix(progressStreamCode, testcase)
 		if !bytes.Equal([]byte(expected), actual) {
+			fmt.Println("expected:", []byte(expected))
+			fmt.Println("actual:  ", actual)
 			t.Errorf("expected:\n%s\nactual:\n%s\n", expected, actual)
 		}
 	}
 }
 
-func Test_newReceivePackResult(t *testing.T) {
+func Test_newPacketHeader(t *testing.T) {
 	// need to get some git-receive-pack data to test with
 	packData := []byte("00940000000000000000000000000000000000000000 68839ad5d8bedf1147c214e4897ca6ad8afbfecc refs/heads/master\x00report-status side-band-64k agent=git/2.8.30000")
 
-	actual := newReceivePackResult(packData)
+	actual := newPacketHeader(packData)
 	if actual.Agent != "git/2.8.3" {
 		t.Error(actual.Agent)
 	}
@@ -85,11 +78,11 @@ func Test_newReceivePackResult(t *testing.T) {
 		t.Error(actual.Branch)
 	}
 
-	if actual.OldRef != "0000000000000000000000000000000000000000" {
-		t.Error(actual.OldRef)
+	if actual.Last != "0000000000000000000000000000000000000000" {
+		t.Error(actual.Last)
 	}
 
-	if actual.NewRef != "68839ad5d8bedf1147c214e4897ca6ad8afbfecc" {
-		t.Error(actual.NewRef)
+	if actual.Head != "68839ad5d8bedf1147c214e4897ca6ad8afbfecc" {
+		t.Error(actual.Head)
 	}
 }

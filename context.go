@@ -7,25 +7,26 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-type streamCode []byte
+type streamCode string
 
 var (
 	serviceRegexp          = regexp.MustCompile("(?:/info/refs\\?service=|/)(git-(?:receive|upload)-pack)$")
 	errNoMatchingService   = errors.New("No matching service types found")
 	errCouldNotReadReqBody = errors.New("couldn't read request body")
 
-	packDataStreamCode = streamCode([]byte{1})
-	progressStreamCode = streamCode([]byte{2})
-	fatalStreamCode    = streamCode([]byte{3})
+	packDataStreamCode = streamCode("\u0001")
+	progressStreamCode = streamCode("\u0002")
+	fatalStreamCode    = streamCode("\u0003")
 )
 
 type handlerContext struct {
-	receivePackResult
+	packetHeader
 	ShouldRunHooks bool
 	Advertisement  bool
 	IsReceivePack  bool
@@ -38,14 +39,7 @@ type handlerContext struct {
 	Output         io.Writer
 }
 
-func (h handlerContext) flush(res http.ResponseWriter) error {
-	if _, err := io.Copy(res, h.Input); err != nil && err != io.EOF {
-		return err
-	}
-
-	return nil
-}
-
+// TODO needs tests
 func newHandlerContext(res http.ResponseWriter, req *http.Request, repoPath string) (handlerContext, error) {
 	serviceTypeStr, err := detectServiceType(req.URL)
 	if err != nil {
@@ -75,23 +69,26 @@ func newHandlerContext(res http.ResponseWriter, req *http.Request, repoPath stri
 
 	fullRepoPath := filepath.Join(repoPath, repoName)
 
-	var rpr receivePackResult
+	var rpr packetHeader
 	if !advertise && isReceivePack {
-		rpr = newReceivePackResult(refsHeader)
+		rpr = newPacketHeader(refsHeader)
 	}
 
+	_, ferr := os.Stat(fullRepoPath)
+	fileExists := !os.IsNotExist(ferr)
+
 	return handlerContext{
-		receivePackResult: rpr,
-		ServiceType:       serviceTypeStr,
-		IsReceivePack:     isReceivePack,
-		Advertisement:     advertise,
-		ShouldRunHooks:    shouldRunHooks,
-		IsGetRefs:         isGetRefs,
-		RepoName:          repoName,
-		RepoExists:        fileExists(fullRepoPath),
-		FullRepoPath:      fullRepoPath,
-		Input:             io.MultiReader(bytes.NewBuffer(refsHeader), req.Body),
-		Output:            res,
+		packetHeader:   rpr,
+		ServiceType:    serviceTypeStr,
+		IsReceivePack:  isReceivePack,
+		Advertisement:  advertise,
+		ShouldRunHooks: shouldRunHooks,
+		IsGetRefs:      isGetRefs,
+		RepoName:       repoName,
+		RepoExists:     fileExists,
+		FullRepoPath:   fullRepoPath,
+		Input:          io.MultiReader(bytes.NewBuffer(refsHeader), req.Body),
+		Output:         io.MultiWriter(res, os.Stdout),
 	}, nil
 }
 
@@ -114,11 +111,12 @@ func detectServiceType(url *url.URL) (string, error) {
 	return match[1], nil
 }
 
-func newHookContext(ctx handlerContext) HookContext {
-	return HookContext{
+func newHookContext(ctx handlerContext) *HookContext {
+	return &HookContext{
+		ctx.FullRepoPath,
 		ctx.RepoName,
 		ctx.Branch,
-		ctx.NewRef,
+		ctx.Head,
 		ctx.RepoExists,
 		ctx.Output,
 	}
@@ -127,7 +125,8 @@ func newHookContext(ctx handlerContext) HookContext {
 // HookContext represents the current context about an on going push for hook handlers. It contains the repo name, branch name, the commit hash and a sideband channel that can be used to write status update messsages to the client.
 type HookContext struct {
 	// Repository is the name of the repository being pushed to
-	Repository string
+	Repository   string
+	FullRepoPath string
 	// Branch is the name of the branch being pushed
 	Branch string
 	// Commit is the commit hash being pushed
@@ -145,24 +144,26 @@ func flush(w io.Writer) {
 }
 
 // Fatal writes a fatal error to the git client. Useful when you want to signal that a push failed
-func (h HookContext) Fatal(msg string) error {
-	_, err := h.w.Write(encodeSideband(fatalStreamCode, "error: "+msg+"\n"))
+func (h *HookContext) Fatal(msg string) error {
+	payload := fmt.Sprintf("%serror: %s\n", fatalStreamCode, msg)
+	_, err := h.w.Write(pktline(payload))
 	return err
 }
 
 // Write writes a []byte to the git client
-func (h HookContext) Write(data []byte) (i int, e error) {
+func (h *HookContext) Write(data []byte) (i int, e error) {
 	defer flush(h.w)
-	return h.w.Write(pktline(append(progressStreamCode, data...)))
+	return h.w.Write(encodeWithPrefix(progressStreamCode, string(data)))
 }
 
 // Writelnf writes a string to the git client using a format string and parameters
-func (h HookContext) Writelnf(fmtString string, params ...interface{}) error {
+func (h *HookContext) Writelnf(fmtString string, params ...interface{}) error {
 	return h.Writeln(fmt.Sprintf(fmtString, params...))
 }
 
 // Writeln writes a string to the git client
-func (h HookContext) Writeln(text string) error {
-	_, err := h.Write([]byte(text + "\n"))
+func (h *HookContext) Writeln(text string) error {
+	defer flush(h.w)
+	_, err := h.w.Write(encodeWithPrefix(progressStreamCode, text+"\n"))
 	return err
 }

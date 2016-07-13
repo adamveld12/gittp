@@ -1,6 +1,7 @@
 package gittp
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,10 +12,10 @@ import (
 )
 
 // PreReceiveHook is a func called on pre receive. This is right before a git push is processed. Returning false from this handler will cancel the push to the remote, and returning true will allow the process to continue
-type PreReceiveHook func(HookContext) error
+type PreReceiveHook func(*HookContext) error
 
 // PostReceiveHook is a func called after git-receive-pack is ran. This is a good place to fire notifications.
-type PostReceiveHook func(HookContext, io.Reader)
+type PostReceiveHook func(*HookContext, []byte)
 
 // PreCreateHook is a func called before a missing repository is created. Returning false from this handler will prevent a new repository from being created.
 type PreCreateHook func(string) bool
@@ -63,36 +64,43 @@ func NewGitServer(config ServerConfig) (http.Handler, error) {
 type gitHTTPServer struct{ ServerConfig }
 
 func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-
 	if g.Debug {
 		log.Println(req.Method, req.URL)
 	}
 
 	header := res.Header()
 
-	header.Set("Server", "gittp")
+	header.Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
 	header.Set("Expires", "Fri, 01 Jan 1980 00:00:00 GMT")
 	header.Set("Pragma", "no-cache")
-	header.Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
+	header.Set("Server", "gittp")
+	header.Set("X-Frame-Options", "DENY")
 
 	ctx, err := newHandlerContext(res, req, g.Path)
+
 	if err != nil {
 		if g.Debug {
 			log.Println("could not create handler context", err)
 		}
+
 		res.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer ctx.flush(res)
 
 	header.Set("Content-Type", contentType(ctx.ServiceType, ctx.Advertisement))
 
 	if ctx.ShouldRunHooks {
 		ok, hookContinuation := g.runHooks(ctx)
-		defer hookContinuation()
 		if !ok {
 			return
 		}
+
+		ctx.Output = &bytes.Buffer{}
+		defer func() {
+			io.Copy(res, ctx.Output.(io.Reader))
+		}()
+
+		defer hookContinuation()
 	}
 
 	if err := g.createRepoIfMissing(ctx); err != nil {
@@ -101,12 +109,14 @@ func (g *gitHTTPServer) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	}
 
 	if ctx.IsGetRefs {
-		ctx.Output.Write(writePacket(fmt.Sprintf("# service=%s\n", ctx.ServiceType)))
+		svc := pktline(fmt.Sprintf("# service=%s\n", ctx.ServiceType))
+
+		ctx.Output.Write(svc)
+		ctx.Output.Write(pktline(""))
 	}
 
 	err = runCmd(ctx.ServiceType, ctx.FullRepoPath, ctx.Input, ctx.Output, ctx.Advertisement)
 	if err != nil {
-
 		if g.Debug {
 			log.Println("an error occurred running", ctx.ServiceType, err)
 		}
@@ -119,11 +129,11 @@ func (g *gitHTTPServer) runHooks(ctx handlerContext) (bool, func()) {
 	flush := func() {}
 
 	if err := g.PreReceive(hookCtx); err != nil {
-		statusHeader := pktline([]byte("unpack ok\n"))
-		reportStatus := pktline([]byte(fmt.Sprintf("ng %s %v\n", hookCtx.Branch, err)))
-		payload := fmt.Sprintf("%s%s", statusHeader, reportStatus)
-		status := writePacket(fmt.Sprintf("\x01%s0000", payload))
-		ctx.Output.Write(status)
+		// statusHeader := pktline("unpack ok\n")
+		// reportStatus := pktline(fmt.Sprintf("ng %s %v\n", hookCtx.Branch, err))
+		// payload := fmt.Sprintf("%s%s", statusHeader, reportStatus)
+		// status := writePacket(fmt.Sprintf("\x01%s0000", payload))
+		// ctx.Output.Write(status)
 		return false, flush
 	}
 
@@ -140,10 +150,11 @@ func (g *gitHTTPServer) runHooks(ctx handlerContext) (bool, func()) {
 }
 
 func (g *gitHTTPServer) createRepoIfMissing(ctx handlerContext) error {
-	shouldRunCreate := !ctx.RepoExists && ctx.Advertisement
 	if ctx.RepoExists {
 		return nil
 	}
+
+	shouldRunCreate := !ctx.RepoExists && ctx.Advertisement
 
 	if shouldRunCreate && g.PreCreate(ctx.RepoName) {
 		if err := initRepository(ctx.FullRepoPath); err != nil {

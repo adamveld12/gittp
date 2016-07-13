@@ -23,8 +23,9 @@ func UseGithubRepoNames(reponame string) bool {
 }
 
 // MasterOnly is a pre receive hook that only allows pushes to master
-func MasterOnly(h HookContext) error {
+func MasterOnly(h *HookContext) error {
 	if h.Branch == "refs/heads/master" {
+		h.Writeln("Hooray I don't give a h*ck")
 		return nil
 	}
 
@@ -35,7 +36,7 @@ func MasterOnly(h HookContext) error {
 
 // CombinePreHooks combines several PreReceiveHooks into one
 func CombinePreHooks(hooks ...PreReceiveHook) PreReceiveHook {
-	return func(h HookContext) error {
+	return func(h *HookContext) error {
 		for _, prh := range hooks {
 			if err := prh(h); err != nil {
 				return err
@@ -47,6 +48,6 @@ func CombinePreHooks(hooks ...PreReceiveHook) PreReceiveHook {
 }
 
 // NoopPreReceive is a pre receive hook that is always successfull. This is the default if no hook is defined
-func NoopPreReceive(h HookContext) error {
+func NoopPreReceive(h *HookContext) error {
 	return nil
 }

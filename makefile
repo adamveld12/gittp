@@ -1,29 +1,31 @@
-dev: build-cli
-	mkdir -p ./repositories
-	./gittp -port 8080 -autocreate -masteronly -debug -path ./repositories
+all: clean dev
 
-build-cli:
-	go build -race ./cli/gittp
+dev: gittp
+	mkdir -p ./repositories
+	./gittp -addr :8080 -autocreate -masteronly -debug -path ./repositories
+
 
 clean:
 	rm -rf ./repositories
 	rm -rf ./gittp
 
 test:
-	go test -cover
+	go test -v -cover
 
-test_cover:
-	rm -rf ./c.out
-	go test -v -coverprofile=c.out
-	go tool cover -html=c.out
-
+test_cover: c.out
+	go tool -v cover -html=c.out
 
 git_debug:
 	export HTTP_PROXY=http://localhost:8080
 	export GIT_CURL_VERBOSE=1
 
-check:
+check: test
 	golint $$(pwd)/*.go
 
+.PHONY: check git_debug test_cover clean test dev all
 
-.PHONY: check git_debug test_cover clean test build-cli dev
+c.out:
+	go test -v -coverprofile=c.out
+
+gittp:
+	go build -a -o ./gittp ./cli/gittp
