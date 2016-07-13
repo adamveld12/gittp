@@ -4,37 +4,55 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
 
 	"github.com/adamveld12/gittp"
+	"github.com/braintree/manners"
 )
 
 func main() {
 
 	config := gittp.ServerConfig{}
-	port, err := parseConfiguration(os.Args[1:], &config)
+	addr, err := parseConfiguration(os.Args[1:], &config)
 
 	if err != nil {
 		os.Exit(1)
 	}
 
-	addr := fmt.Sprintf(":%s", port)
+	sv := manners.NewServer()
+
+	sv.Addr = addr
 
 	handle, err := gittp.NewGitServer(config)
-
+	sv.Handler = handle
 	if err != nil {
 		log.Fatal("could not open dir", config.Path)
 	} else {
-		log.Fatal(http.ListenAndServe(addr, handle))
+		go func() {
+			fmt.Printf("Listening for git commands @ %v\n", addr)
+			if err := sv.ListenAndServe(); err != nil {
+				log.Fatal(err)
+			}
+		}()
+	}
+
+	sig := make(chan os.Signal)
+	signal.Notify(sig, os.Interrupt)
+
+	<-sig
+	fmt.Println("Closing down server...")
+
+	if !sv.BlockingClose() {
+		fmt.Println("could not close gracefully")
 	}
 }
 
-func parseConfiguration(args []string, config *gittp.ServerConfig) (port string, err error) {
+func parseConfiguration(args []string, config *gittp.ServerConfig) (addr string, err error) {
 	fSet := flag.NewFlagSet("", flag.ContinueOnError)
 
 	var masterOnly, autocreate bool
-	fSet.StringVar(&port, "port", "80", "The port that gittp listens on")
+	fSet.StringVar(&addr, "addr", ":80", "The addr that gittp listens on")
 	fSet.StringVar(&config.Path, "path", "./repositories", "The path that gittp stores pushed repositories")
 	fSet.BoolVar(&masterOnly, "masteronly", false, "Only allow pushing to master")
 	fSet.BoolVar(&autocreate, "autocreate", false, "Auto creates repositories if they have not been created")
