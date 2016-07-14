@@ -113,8 +113,8 @@ func detectServiceType(url *url.URL) (string, error) {
 
 func newHookContext(ctx handlerContext) *HookContext {
 	return &HookContext{
-		ctx.FullRepoPath,
 		ctx.RepoName,
+		ctx.FullRepoPath,
 		ctx.Branch,
 		ctx.Head,
 		ctx.RepoExists,
