@@ -59,3 +59,19 @@ func main() {
   log.Fatal(http.ListenAndServe(":80", handle))
 }
 ```
+
+
+## Contributing
+
+All contributions, critiques and questions are welcome.
+
+- [Git Guildines](https://github.com/thoughtbot/guides/tree/master/protocol/git)
+- [How I Review Code](https://github.com/thoughtbot/guides/tree/master/code-review)
+- [My Coding Practices](https://github.com/thoughtbot/guides/tree/master/best-practices)
+- [My Style Guide](https://github.com/thoughtbot/guides/tree/master/style)
+
+
+## License
+
+MIT
+
