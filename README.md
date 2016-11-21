@@ -2,8 +2,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/adamveld12/gittp)](https://goreportcard.com/report/github.com/adamveld12/gittp)
 [![GoDoc](https://godoc.org/github.com/adamveld12/gittp?status.svg)](http://godoc.org/github.com/adamveld12/gittp)
-[![Build Status](https://drone.io/github.com/adamveld12/gittp/status.png)](https://drone.io/github.com/adamveld12/gittp/latest)
-
+[![Build Status](https://semaphoreci.com/api/v1/adamveld12/gittp/branches/master/badge.svg)](https://semaphoreci.com/adamveld12/gittp)
 
 Host your own git server over HTTP. Effortlessly hook into pre and post receive events and write status updates back to the client.
 
@@ -29,6 +28,11 @@ Available args:
 `-debug`: turns on debug logging
 
 ## How to Library
+
+Install:
+```
+go get gopkg.in/adamveld12/gittp.v1
+```
 
 This lib follows http.Handler conventions. I purposely do not include any authentication, since there are many http basic authentication modules out there to use.
 
