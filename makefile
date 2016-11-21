@@ -1,9 +1,12 @@
-all: clean dev
+all: clean check dev git_debug test
 
 dev: gittp
 	mkdir -p ./repositories
 	./gittp -addr :8080 -autocreate -masteronly -debug -path ./repositories
 
+setup:
+	go get -u github.com/golang/lint/golint
+	go get -t -d -v ./...
 
 clean:
 	rm -rf ./repositories
@@ -28,4 +31,4 @@ c.out:
 	go test -v -coverprofile=c.out
 
 gittp:
-	go build -a -o ./gittp ./cli/gittp
+	go build -a -v -o ./gittp ./cli/gittp
